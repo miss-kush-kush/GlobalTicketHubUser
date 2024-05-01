@@ -1,0 +1,6 @@
+@GlobalTicketHub_HostAddress = http://localhost:5125
+
+GET {{GlobalTicketHub_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
