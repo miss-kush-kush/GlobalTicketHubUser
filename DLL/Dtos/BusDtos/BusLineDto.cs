@@ -8,8 +8,8 @@ namespace DLL.Dtos.BusDtos
 {
     public class BusLineDto
     {
-        public int Id { get; set; } // Added to support updates if necessary
         public string LineName { get; set; }
         public string Description { get; set; }
+        public object Buses { get; set; }
     }
 }

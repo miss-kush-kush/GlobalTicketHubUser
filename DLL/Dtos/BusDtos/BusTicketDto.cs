@@ -9,27 +9,13 @@ namespace DLL.Dtos.BusDtos
 {
     public class BusTicketDto
     {
-        public int Id { get; set; }
-
-        public string PassengerFirstName { get; set; }
-        public string PassengerLastName { get; set; }
-
-        public DateTime? DateOfBirth { get; set; }
-        public string StudentCardNumber { get; set; }
-
-        public string DepartureStation { get; set; }
-        public string ArrivalStation { get; set; }
-
-        public DateTime? DepartureTime { get; set; }
-        public DateTime? ArrivalTime { get; set; }
-
+        public string? UserId { get; set; }
+        public string Email { get; set; }
+        public string FirstName { get; set; }
+        public string LastName { get; set; }
         public decimal Price { get; set; }
+        public TicketType TicketType { get; set; }
 
-        public float Duration { get; set; }
-
-        public BusType BusType { get; set; }
-
-        public string BusNumber { get; set; }
-        public int TrainSeat { get; set; }
+        public int SeatNumber { get; set; }
     }
 }

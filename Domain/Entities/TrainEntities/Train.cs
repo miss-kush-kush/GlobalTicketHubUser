@@ -15,6 +15,8 @@ namespace Domain.Entities.TrainEntities
         public int Id { get; set; }
         public string TrainNumber { get; set; } 
 
+        public bool IsAvailable { get; set; }   
+
         public TrainType TrainType { get; set; }    
 
         public int TrainLineId { get; set; }

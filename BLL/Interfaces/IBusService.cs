@@ -1,4 +1,5 @@
 ﻿using DLL.Dtos.BusDtos;
+using DLL.Dtos.TrainDtos;
 using Domain.Types;
 using System;
 using System.Collections.Generic;
@@ -10,20 +11,11 @@ namespace BLL.Interfaces
 {
     public interface IBusService
     {
-        Task AddBusStationsAsync(List<BusStationDto> busStationDtos);
-        Task AddBusLinesAsync(List<BusLineDto> busLineDtos);
-        Task AddBusesAsync(List<BusDto> busDtos);
-        Task AddBusSchedulesAsync(List<BusOperationPlanDto> busOperationPlanDtos);
+        Task<IEnumerable<AppropriateBusLineDto>> FindAppropriateLinesAsync(string departureStation, string arrivalStation, DateTime departureDate);
+        Task<BusLineDto> GetBusDetailsByBusNumberAsync(string busLineName, int busId);
+        Task ReserveSeats(SeatReservationRequestDto request);
+        Task BuyBusTicketFail(PaymentBusResponseFailDto paymentResponseFailDto);
+        Task BuyBusTicketSuccess(PaymentBusResponseSuccessDto paymentBusResponseSuccessDto);
 
-        // Existing methods for retrieving train-related information
-        Task<IEnumerable<BusDto>> GetBusesByBusLineAsync(int trainLineId);
-        // New method for finding appropriate train tickets
-        Task<IEnumerable<BusTicketDto>> FindAppropriateTicketsAsync(
-            string departureStation,
-            string arrivalStation,
-            DateTime departureDate,
-            int? passengerCount = null, // Optional
-            TicketType? ticketType = null // Optional
-        );
     }
 }

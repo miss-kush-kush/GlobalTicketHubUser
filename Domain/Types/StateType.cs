@@ -9,7 +9,6 @@ namespace Domain.Types
     public enum StateType
     {
         bought,
-        empty,
-        booked
+        empty
     }
 }

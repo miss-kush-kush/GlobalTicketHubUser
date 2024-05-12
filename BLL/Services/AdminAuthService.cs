@@ -2,12 +2,12 @@
 using DLL.Dtos.UserDtos;
 using BLL.Interfaces;
 using BLL.OtherObjects;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using RestSharp;
 using System.Net;
 using Domain.Entities.UserEntities;
+using Microsoft.AspNetCore.Identity;
 
 namespace BLL.Services
 {

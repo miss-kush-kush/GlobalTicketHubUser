@@ -15,8 +15,9 @@ namespace Domain.Entities.BusEntities
         public int Id { get; set; }
         public string LineName { get; set; }
         public string Description { get; set; }
+        public string Owner {  get; set; }
 
-        public virtual ICollection<Bus> Buses { get; set; }  
-        public virtual ICollection<BusOperationPlan> BusOperationPlans { get; set; }
+        public virtual ICollection<Bus> Buses { get; set; }
+        public virtual ICollection<BusMovement> BusMovements { get; set; }
     }
 }

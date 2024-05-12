@@ -1,5 +1,4 @@
-﻿using Domain.Entities.TrainEntities;
-using Domain.Entities.UserEntities;
+﻿using Domain.Entities.UserEntities;
 using Domain.Types;
 using System;
 using System.Collections.Generic;
@@ -17,20 +16,22 @@ namespace Domain.Entities.BusEntities
         [Key]
         public int Id { get; set; }
 
-        public string UserId { get; set; }
-        public virtual AppUser User { get; set; }
+        public string Email { get; set; }
+        public string FirstName { get; set; }
+        public string LastName { get; set; }
+        public decimal Price { get; set; }
 
-        public int BusId { get; set; }
-        public virtual Bus Bus { get; set; }
+        public DateTime DateOfPurchase { get; set; }
+        public int SeatNumber { get; set; }
+        public string BusNumber { get; set; }
+        public string BusLineName { get; set; }
 
-        public int BusOperationPlanId { get; set; }
-        public virtual BusOperationPlan BusOperationPlan { get; set; }
+        public DateTime TimeOfDeparture { get; set; }
+        public DateTime TimeOfArrival { get; set; }
+        public string StationOfDeparture { get; set; }
+        public string StationOfArrival { get; set; }
 
         public TicketType TicketType { get; set; }
-
-        public BusType BusType { get; set; }
-
-        public DateTime? DateOfBirth { get; set; }
-        public string StudentCardNumber { get; set; }
+        
     }
 }

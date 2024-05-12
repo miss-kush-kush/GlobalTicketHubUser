@@ -15,7 +15,6 @@ namespace Domain.Entities.TrainEntities
         public int Id { get; set; }
         public int Number { get; set; }
         public StateType StateType { get; set; }
-        public SeatType SeatType { get; set; }
 
         public int WagonId { get; set; }
         public virtual Wagon Wagon { get; set; }

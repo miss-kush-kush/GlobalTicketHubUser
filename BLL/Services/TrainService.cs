@@ -1,24 +1,21 @@
 ﻿using DLL.DbContext;
-using Domain.Entities.LocationEntities;
 using Domain.Entities.TrainEntities;
-using BLL.Interfaces;
 using Microsoft.EntityFrameworkCore;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using DLL.Dtos.TrainDtos;
-using System.Diagnostics;
-using System.Numerics;
-using System.Security.Policy;
-using static System.Collections.Specialized.BitVector32;
-using Microsoft.Extensions.Hosting;
-using Domain.Entities.UserEntities;
 using Domain.Types;
-using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
-using static System.Runtime.InteropServices.JavaScript.JSType;
+using Domain.Entities.UserEntities;
+using DLL.Dtos.UserDtos;
+using DLL.Dtos.PaymentDtos;
+using System.Drawing;
+using System.Net.Mail;
+using System.Net;
+using System.Xml.Linq;
+using PdfSharp.Pdf;
+using PdfSharp.Drawing;
 
 public class TrainService : ITrainService
 {
+
     private readonly AppDbContext _context;
 
     public TrainService(AppDbContext context)
@@ -27,153 +24,331 @@ public class TrainService : ITrainService
     }
 
 
-    public Task AddTrainSchedulesAsync(List<TrainOperationPlanDto> trainOperationPlanDtos)
+    public async Task<IEnumerable<AppropriateTrainLineDto>> FindAppropriateLinesAsync(string departureStation, string arrivalStation, DateTime departureDate)
     {
-        throw new NotImplementedException();
-    }
+        int departureStationId = _context.TrainStations.FirstOrDefault(ts => ts.StationName == departureStation)?.Id ?? -1;
+        int arrivalStationId = _context.TrainStations.FirstOrDefault(ts => ts.StationName == arrivalStation)?.Id ?? -1;
 
-    public Task<IEnumerable<TrainDto>> GetTrainsByTrainLineAsync(int trainLineId)
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task<IEnumerable<WagonDto>> GetWagonsByTrainAsync(int trainId)
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task<IEnumerable<TrainSeatDto>> GetSeatsByWagonAsync(int wagonId)
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task AddTrainStationsAsync(List<TrainStationDto> trainStationDtos)
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task AddTrainLinesAsync(List<TrainLineDto> trainLineDtos)
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task AddTrainsAsync(List<TrainDto> trainDtos)
-    {
-        throw new NotImplementedException();
-    }
-
-
-    public async Task<IEnumerable<AppropriateTicketDto>> FindAppropriateTicketsAsync(
-        string departureStation,
-        string arrivalStation,
-        DateTime departureDate)
-    {
-        // Step 1: Find TrainStations for the given departure and arrival stations
-        var departureTrainStation = await _context.TrainStations
-            .FirstOrDefaultAsync(station =>
-                station.StationName.Equals(departureStation, StringComparison.OrdinalIgnoreCase));
-
-        var arrivalTrainStation = await _context.TrainStations
-            .FirstOrDefaultAsync(station =>
-                station.StationName.Equals(arrivalStation, StringComparison.OrdinalIgnoreCase));
-
-        if (departureTrainStation == null || arrivalTrainStation == null)
+        if (departureStationId == -1 || arrivalStationId == -1)
         {
-            throw new InvalidOperationException("Invalid departure or arrival station.");
+            return Enumerable.Empty<AppropriateTrainLineDto>();
         }
 
-        // Step 2: Find TrainStationSchedules for the specified departure date
-        var trainStationSchedule = await _context.TrainStationSchedules
-            .FirstOrDefaultAsync(schedule =>
-                schedule.TrainStationId == departureTrainStation.Id &&
-                schedule.ScheduleDate.Date == departureDate.Date);
-
-        if (trainStationSchedule == null)
-        {
-            throw new InvalidOperationException("No train schedule found for the specified date.");
-        }
-
-        // Step 3: Find TrainOperationPlans for this schedule and get their TrainStops
-        var trainOperationPlans = await _context.TrainOperationPlans
-            .Include(plan => plan.TrainLine) // Include TrainLine
-            .Where(plan => plan.TrainStops
-                .Any(stop =>
-                    stop.TrainStationId == departureTrainStation.Id &&
-                    stop.DepartureTime.HasValue && // Ensure DepartureTime is not null
-                    stop.DepartureTime.Value.Date == departureDate.Date)) // Access Date after confirming non-null
+        var departureMovements = await _context.TrainMovements
+            .Include(tm => tm.TrainLine)
+            .ThenInclude(tl => tl.Trains)
+            .ThenInclude(t => t.Wagons)
+            .ThenInclude(w => w.TrainSeats)
+            .Where(tm => tm.DepartureTime.HasValue &&
+                         tm.DepartureTime.Value.Date == departureDate.Date &&
+                         tm.TrainStationId == departureStationId &&
+                         tm.TrainLine.Trains.Any(t => t.IsAvailable))
             .ToListAsync();
 
-        if (!trainOperationPlans.Any())
-        {
-            throw new InvalidOperationException("No train operation plans found for the specified date.");
-        }
+        var arrivalMovements = await _context.TrainMovements
+            .Include(tm => tm.TrainLine)
+            .ThenInclude(tl => tl.Trains)
+            .ThenInclude(t => t.Wagons)
+            .ThenInclude(w => w.TrainSeats)
+            .Where(tm => tm.ArrivalTime.HasValue &&
+                         tm.ArrivalTime.Value.Date == departureDate.Date &&
+                         tm.TrainStationId == arrivalStationId)
+            .ToListAsync();
 
-        // Step 4: Retrieve TrainLines and associated Trains, Wagons, and TrainSeats
+        var appropriateLines = from departureMovement in departureMovements
+                               join arrivalMovement in arrivalMovements
+                               on departureMovement.TrainLineId equals arrivalMovement.TrainLineId
+                               where departureMovement.DepartureTime < arrivalMovement.ArrivalTime
+                               select new AppropriateTrainLineDto
+                               {
+                                   
+                                   
+                                   DepartureStation = departureStation,
+                                   ArrivalStation = arrivalStation,
+                                   DepartureTime = new TimeOnly(departureMovement.DepartureTime.Value.Hour, departureMovement.DepartureTime.Value.Minute),
+                                   ArrivalTime = new TimeOnly(arrivalMovement.ArrivalTime.Value.Hour, arrivalMovement.ArrivalTime.Value.Minute),
+                                   DepartureDate = departureMovement.DepartureTime.Value.Date,
+                                   ArrivalDate = arrivalMovement.ArrivalTime.Value.Date,
+                                   AvailablePlaces = departureMovement.TrainLine.Trains.SelectMany<Train, TrainSeat>(t => t.Wagons.SelectMany<Wagon, TrainSeat>(w => w.TrainSeats)).Count(s => s.StateType == StateType.empty),
+                                   TotalPlaces = departureMovement.TrainLine.Trains.SelectMany<Train, TrainSeat>(t => t.Wagons.SelectMany<Wagon, TrainSeat>(w => w.TrainSeats)).Count(),
+                                   Duration = GetDurationAsTimeOnly(departureMovement.DepartureTime.Value, arrivalMovement.ArrivalTime.Value),
+                                   TrainLineName = departureMovement.TrainLine.LineName,
+                                   TrainLineDescription = departureMovement.TrainLine.Description,
+                                   TrainId = departureMovement.TrainLine.Trains.FirstOrDefault()?.Id ?? -1,
+                                   TrainNumber = departureMovement.TrainLine.Trains.FirstOrDefault()?.TrainNumber ?? string.Empty,
+                                   TrainType = departureMovement.TrainLine.Trains.FirstOrDefault()?.TrainType ?? default,
+
+                                   WagonTypes = departureMovement.TrainLine.Trains.SelectMany(t => t.Wagons).Select(w => w.WagonType).Distinct().ToList(),
+                                   Wagons = departureMovement.TrainLine.Trains
+                                            .SelectMany(t => t.Wagons)
+                                            .Select(w => new WagonDto
+                                            {
+                                                Number = w.Number,
+                                                WagonType = w.WagonType,
+                                                AvailableSeats = w.TrainSeats.Count(s => s.StateType == StateType.empty)
+                                            }).ToList(),
+
+                                   FirstPrices = CalculateFirstPrices(departureMovement.DistanceFromStart, arrivalMovement.DistanceFromStart)
+
+                               };
+
+        return appropriateLines.ToList();
+    }
+
+    private List<decimal> CalculateFirstPrices(int departureDistance, int arrivalDistance)
+    {
+        var distance = arrivalDistance - departureDistance;
+        var prices = new List<decimal>
+    {
+        (decimal)(distance * 10 * 0.05), // PlackartEkonom
+        (decimal)(distance * 10 * 0.2),  // SittingFirstClass
+        (decimal)(distance * 10 * 0.1)   // SittingSecondClass
+    };
+        return prices;
+    }
+
+    private TimeOnly GetDurationAsTimeOnly(DateTime departureTime, DateTime arrivalTime)
+    {
+        var duration = arrivalTime - departureTime;
+        int totalMinutes = (int)duration.TotalMinutes;
+        int hours = totalMinutes / 60;
+        int minutes = totalMinutes % 60;
+        return new TimeOnly(hours, minutes);
+    }
+
+    public async Task<TrainLineDto> GetTrainDetailsByTrainNumberAsync(string trainLineName, int trainId, WagonType wagonType)
+    {
         var trainLine = await _context.TrainLines
-            .FirstOrDefaultAsync(line =>
-                trainOperationPlans.Any(plan => plan.TrainLineId == line.Id));
+            .Where(tl => tl.LineName == trainLineName)
+            .Select(tl => new TrainLineDto
+            {
+                LineName = tl.LineName,
+                Description = tl.Description,
+                Trains = tl.Trains
+                    .Where(t => t.IsAvailable && t.Id == trainId)
+                    .Select(t => new TrainDto
+                    {
+                        TrainId = t.Id,
+                        TrainType = t.TrainType,
+                        Wagons = t.Wagons
+                            .Where(w => w.WagonType == wagonType && w.TrainSeats.Any(s => s.StateType == StateType.empty))
+                            .Select(w => new WagonDto
+                            {
+                                Number = w.Number,
+                                WagonId = w.Id,
+                                WagonType = w.WagonType,
+                                AvailableSeats = w.TrainSeats.Count(s => s.StateType == StateType.empty),
+                                Seats = w.TrainSeats.Select(s => new TrainSeatDto
+                                {
+                                    SeatId = s.Id,
+                                    Number = s.Number,
+                                    StateType = s.StateType
+                                }).ToList()
+                            }).ToList()
+                    }).ToList()
+            })
+            .FirstOrDefaultAsync();
 
-        if (trainLine == null)
-        {
-            throw new InvalidOperationException("No matching train line found.");
-        }
+        return trainLine ?? throw new Exception("Train line not found.");
+    }
 
-        var trains = await _context.Trains
-            .Where(train => train.TrainLineId == trainLine.Id)
-            .Include(train => train.Wagons) // Include related Wagons
-            .ThenInclude(wagon => wagon.TrainSeats) // Include related TrainSeats
+    public async Task ReserveSeats(SeatReservationRequestDto request)
+    {
+       
+        var seats = await _context.TrainSeats
+            .Include(s => s.Wagon)
+            .ThenInclude(w => w.Train)
+            .Where(s => s.Wagon.Train.Id == request.TrainId &&
+                        s.Wagon.Id == request.WagonId &&
+                        request.SeatNumbers.Contains(s.Number) &&
+                        s.StateType == StateType.empty)
             .ToListAsync();
 
-        var appropriateTickets = new List<AppropriateTicketDto>();
-
-        // Step 5: For each Train and Wagon, calculate TotalPlaces and AvailablePlaces
-        foreach (var train in trains)
+        foreach (var seat in seats)
         {
-            int totalPlaces = train.Wagons.Sum(wagon => wagon.TrainSeats.Count());
-            int availablePlaces = train.Wagons.Sum(wagon =>
-                wagon.TrainSeats.Count(seat => seat.StateType == StateType.empty));
+            seat.StateType = StateType.bought;
+        }
+        await _context.SaveChangesAsync();
+    }
 
-            // Get the first TrainOperationPlan
-            var firstPlan = trainOperationPlans.FirstOrDefault();
 
-            if (firstPlan == null)
+    public async Task BuyTrainTicketFail(PaymentTrainResponseFailDto paymentResponseFailDto)
+    {
+        var order = await _context.Orders
+            .FirstOrDefaultAsync(o => o.OrderId == paymentResponseFailDto.OrderId);
+
+        if (order != null)
+        {
+            throw new Exception($"Order with OrderId {paymentResponseFailDto.OrderId} already exists.");
+        }
+        else
+        {
+            order = new Order
             {
-                throw new InvalidOperationException("No valid train operation plan found.");
-            }
-
-            // Get the TrainStops from the first operation plan
-            var firstStop = firstPlan.TrainStops.FirstOrDefault();
-            var lastStop = firstPlan.TrainStops.LastOrDefault();
-
-            if (firstStop == null || lastStop == null)
-            {
-                throw new InvalidOperationException("Invalid train stops for the specified plan.");
-            }
-
-            var ticketDto = new AppropriateTicketDto
-            {
-                DepartureStation = departureTrainStation.StationName,
-                ArrivalStation = arrivalTrainStation.StationName,
-                DepartureTime = firstStop.DepartureTime,
-                ArrivalTime = lastStop.ArrivalTime,
-                DepartureDate = departureDate,
-                ArrivalDate = lastStop.ArrivalTime?.Date,
-                TrainType = train.TrainType,
-                TrainLineName = trainLine.LineName,
-                TrainLineDescription = trainLine.Description,
-                TotalPlaces = totalPlaces,
-                AvailablePlaces = availablePlaces,
-                Duration = (float)((lastStop.ArrivalTime - firstStop.DepartureTime)?.TotalHours ?? 0)
+                OrderId = paymentResponseFailDto.OrderId,
+                OrderState = paymentResponseFailDto.OrderStatus
             };
 
-            appropriateTickets.Add(ticketDto);
+            await _context.Orders.AddAsync(order);
         }
 
-        // Step 6: Return the list of AppropriateTicketDto
-        return appropriateTickets;
+        var seats = await _context.TrainSeats
+            .Include(s => s.Wagon)
+            .ThenInclude(w => w.Train)
+            .Where(s => s.Wagon.Train.Id == paymentResponseFailDto.TrainId &&
+                        s.Wagon.Id == paymentResponseFailDto.WagonId &&
+                        paymentResponseFailDto.Seats.Contains(s.Number))
+            .ToListAsync();
+
+        foreach (var seat in seats)
+        {
+            seat.StateType = StateType.empty;
+        }
+
+        await _context.SaveChangesAsync();
     }
 
 
+    public async Task BuyTrainTicketSuccess(PaymentTrainResponseSuccessDto paymentTrainResponseSuccessDto)
+    {
+        var order = await _context.Orders
+            .FirstOrDefaultAsync(o => o.OrderId == paymentTrainResponseSuccessDto.OrderId);
+
+        if (order != null)
+        {
+            throw new Exception($"Order with OrderId {paymentTrainResponseSuccessDto.OrderId} already exists.");
+        }
+        else
+        {
+            order = new Order
+            {
+                OrderId = paymentTrainResponseSuccessDto.OrderId,
+                OrderState = paymentTrainResponseSuccessDto.OrderStatus
+            };
+            await _context.Orders.AddAsync(order);
+        }
+
+        var trainTickets = new List<TrainTicket>();
+        var purchaseHistories = new List<TrainPurchaseHistory>();
+        var now = DateTime.UtcNow;
+
+        foreach (var ticketDto in paymentTrainResponseSuccessDto.TrainTicketDtos)
+        {
+            var seat = await _context.TrainSeats
+                .Include(s => s.Wagon)
+                .ThenInclude(w => w.Train)
+                .FirstOrDefaultAsync(s => s.Wagon.Train.Id == paymentTrainResponseSuccessDto.TrainId &&
+                                          s.Wagon.Id == paymentTrainResponseSuccessDto.WagonId &&
+                                          s.Number == ticketDto.SeatNumber);
+
+            if (seat == null)
+            {
+                throw new Exception($"Seat number {ticketDto.SeatNumber} not found.");
+            }
+
+            seat.StateType = StateType.bought;
+
+            var trainTicket = new TrainTicket
+            {
+                Email = ticketDto.Email,
+                FirstName = ticketDto.FirstName,
+                LastName = ticketDto.LastName,
+                Price = ticketDto.Price,
+                DateOfPurchase = now,
+                TicketType = ticketDto.TicketType,
+                SeatNumber = ticketDto.SeatNumber,
+                WagonNumber = paymentTrainResponseSuccessDto.WagonId,
+                TrainNumber = paymentTrainResponseSuccessDto.TrainId.ToString(), 
+                TrainLineName = paymentTrainResponseSuccessDto.TrainLineName,
+                TimeOfDeparture = paymentTrainResponseSuccessDto.TimeOfDeparture,
+                TimeOfArrival = paymentTrainResponseSuccessDto.TimeOfArrival,
+                StationOfDeparture = paymentTrainResponseSuccessDto.StationOfDeparture,
+                StationOfArrival = paymentTrainResponseSuccessDto.StationOfArrival
+            };
+
+            await _context.TrainTickets.AddAsync(trainTicket);
+            trainTickets.Add(trainTicket);
+
+            if (!string.IsNullOrEmpty(ticketDto.UserId))
+            {
+                var purchaseHistory = new TrainPurchaseHistory
+                {
+                    OrderId = order.Id,
+                    UserId = ticketDto.UserId,
+                    TrainTicket = trainTicket,
+                    Price = trainTicket.Price,
+                    PurchaseDate = now
+                };
+
+                purchaseHistories.Add(purchaseHistory);
+                await _context.TrainPurchaseHistory.AddAsync(purchaseHistory);
+            }
+
+            SendTicketPdfByEmail(trainTicket); 
+        }
+
+        await _context.SaveChangesAsync();
+    }
+
+    private void SendTicketPdfByEmail(TrainTicket trainTicket)
+    {
+        
+        var pdfDocument = new PdfDocument();
+        var page = pdfDocument.AddPage();
+        var graphics = XGraphics.FromPdfPage(page);
+        var font = new XFont("Verdana", 12);
+
+        graphics.DrawString($"Train Ticket", font, XBrushes.Black,
+        new XRect(0, 0, page.Width, page.Height),
+        XStringFormats.TopCenter);
+
+        graphics.DrawString($"Name: {trainTicket.FirstName} {trainTicket.LastName}", font, XBrushes.Black,
+            new XRect(20, 40, page.Width, page.Height),
+        XStringFormats.TopLeft);
+
+        graphics.DrawString($"Email: {trainTicket.Email}", font, XBrushes.Black,
+            new XRect(20, 60, page.Width, page.Height),
+        XStringFormats.TopLeft);
+
+        graphics.DrawString($"Train Number: {trainTicket.TrainNumber}", font, XBrushes.Black,
+            new XRect(20, 80, page.Width, page.Height),
+        XStringFormats.TopLeft);
+
+        graphics.DrawString($"Departure: {trainTicket.StationOfDeparture} at {trainTicket.TimeOfDeparture}", font, XBrushes.Black,
+            new XRect(20, 100, page.Width, page.Height),
+        XStringFormats.TopLeft);
+
+        graphics.DrawString($"Arrival: {trainTicket.StationOfArrival} at {trainTicket.TimeOfArrival}", font, XBrushes.Black,
+            new XRect(20, 120, page.Width, page.Height),
+            XStringFormats.TopLeft);
+
+        // Save PDF to memory stream
+        using (var stream = new MemoryStream())
+        {
+            pdfDocument.Save(stream, false);
+
+            // Send email
+            var client = new SmtpClient("smtp.example.com")
+            {
+                Port = 587,
+                Credentials = new NetworkCredential("kushneryk.yelyzaveta@gmailcom", "vswm vphu lhoi vpvn"),
+                EnableSsl = true,
+            };
+
+            var mailMessage = new MailMessage
+            {
+                From = new MailAddress("noreply@globaltickethub.com"),
+                Subject = "Your Train Ticket",
+                Body = "Please find your train ticket attached.",
+                IsBodyHtml = true,
+            };
+            mailMessage.To.Add(trainTicket.Email);
+            mailMessage.Attachments.Add(new Attachment(new MemoryStream(stream.ToArray()), "TrainTicket.pdf"));
+
+            client.Send(mailMessage);
+        }
+    }
 
 
 }
+

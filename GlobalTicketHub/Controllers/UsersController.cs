@@ -14,14 +14,24 @@ namespace GlobalTicketHub.Controllers
     {
         private readonly IUserAuthService _authService;
         private readonly ITokenService _tokenService;
+        private readonly IAdminAuthService _authAdminService;
 
-        public UsersController(IUserAuthService authService, ITokenService tokenService)
+        public UsersController(IUserAuthService authService, ITokenService tokenService, IAdminAuthService authAdminService)
         {
             _authService = authService;
             _tokenService = tokenService;
+            _authAdminService = authAdminService;
         }
 
-        
+        [HttpPost]
+        [Route("seed-Roles")]
+        public async Task<IActionResult> SeedRoles()
+        {
+            var seedRoles = await _authAdminService.SeedRolesAsync();
+
+            return Ok(seedRoles);
+        }
+
         // Route -> Register
         [HttpPost]
         [Route("register")]

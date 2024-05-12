@@ -302,15 +302,13 @@ namespace BLL.Services
 
         public async Task<AuthResponseDto> LogoutAsync(string userId)
         {
-            // Invalidate the session if using cookie-based sessions
             await _signInManager.SignOutAsync();
 
-            // If using JWT refresh tokens, find the user and invalidate their refresh token
             var user = await _userManager.FindByIdAsync(userId);
             if (user != null)
             {
-                user.RefreshToken = null; // Invalidate the refresh token
-                user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(-1); // Optionally, set the refresh token's expiry to the past
+                user.RefreshToken = null; 
+                user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(-1); 
                 await _userManager.UpdateAsync(user);
             }
 
@@ -320,5 +318,7 @@ namespace BLL.Services
                 Message = "Logout successful."
             };
         }
+
+
     }
 }

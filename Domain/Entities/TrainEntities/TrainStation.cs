@@ -18,6 +18,6 @@ namespace Domain.Entities.TrainEntities
         public int LocationId { get; set; }
         public virtual Location Location { get; set; }
 
-        public virtual ICollection<TrainStationSchedule> TrainStationSchedules { get; set; }
+        public virtual ICollection<TrainMovement> TrainMovements { get; set; }
     }
 }

@@ -9,10 +9,14 @@ namespace DLL.Dtos.TrainDtos
 {
     public class TrainTicketDto
     {
-        public int Id { get; set; }
+        public string? UserId { get; set; }
+        public string Email { get; set; }
+        public string FirstName { get; set; }
+        public string LastName { get; set; }
+        public decimal Price { get; set; }
+        public TicketType TicketType { get; set; }
 
-        public string PassengerFirstName { get; set; }
-        public string PassengerLastName { get; set; }
-
+        public int SeatNumber { get; set; }
+        
     }
 }

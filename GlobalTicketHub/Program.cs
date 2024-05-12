@@ -8,28 +8,31 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
 using Domain.Entities.UserEntities;
+using Microsoft.AspNetCore.ResponseCompression;
+using PdfSharp.Charting;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-
 builder.Services.AddEndpointsApiExplorer();
 
 // Add DB
 var connectionString = builder.Configuration.GetConnectionString("local") ?? throw new InvalidOperationException("Connection string 'ApplicationDbContextConnection' not found.");
-
 builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlServer(connectionString));
 
+builder.Services.AddScoped<IUserAuthService, UserAuthService>();
+builder.Services.AddScoped<IAdminAuthService, AdminAuthService>();
 builder.Services.AddScoped<IFeedbackService, FeedbackService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<ITrainService, TrainService>();
+builder.Services.AddScoped<IBusService, BusService>();
+builder.Services.AddScoped<IPaymentService, PaymentService>();
 
 // Add Identity
 builder.Services
     .AddIdentity<AppUser, IdentityRole>()
     .AddEntityFrameworkStores<AppDbContext>()
     .AddDefaultTokenProviders();
-
 
 // Config Identity
 builder.Services.Configure<IdentityOptions>(options =>
@@ -45,7 +48,6 @@ builder.Services.Configure<IdentityOptions>(options =>
 
 // Add Authentication and JwtBearer
 var JWTSetting = builder.Configuration.GetSection("JWT");
-
 builder.Services
     .AddAuthentication(options =>
     {
@@ -71,20 +73,17 @@ builder.Services
     });
 
 
-// Inject app Dependencies (Dependency Injection)
-builder.Services.AddScoped<IUserAuthService, UserAuthService>();
-
-builder.Services.AddEndpointsApiExplorer();
+// Swagger Setup
 builder.Services.AddSwaggerGen(options =>
 {
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
-        In = ParameterLocation.Header,
-        Description = "Please enter your token with this format: ''Bearer YOUR_TOKEN''",
         Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Header,
         BearerFormat = "JWT",
-        Scheme = "Bearer"
+        Scheme = "Bearer",
+        Description = "Please enter your token with this format: 'Bearer YOUR_TOKEN'"
     });
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
@@ -105,8 +104,6 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-
-
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -117,17 +114,17 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
 app.UseCors(options =>
 {
-    options.AllowAnyHeader();
-    options.AllowAnyMethod();
-    options.AllowAnyOrigin();
+    options.AllowAnyOrigin()
+    .AllowAnyMethod()
+    .AllowAnyHeader();
 });
 
-
 app.UseAuthentication();
-
 app.UseAuthorization();
+
 
 app.MapControllers();
 

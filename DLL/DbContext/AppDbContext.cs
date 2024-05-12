@@ -1,7 +1,7 @@
-﻿using Domain.Entities.LocationEntities;
-using Domain.Entities.TrainEntities;
+﻿using Domain.BusEntities;
 using Domain.Entities.BusEntities;
-using Domain.Entities.PlaneEntities;
+using Domain.Entities.LocationEntities;
+using Domain.Entities.TrainEntities;
 using Domain.Entities.UserEntities;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -19,37 +19,27 @@ namespace DLL.DbContext
     public class AppDbContext : IdentityDbContext<AppUser>
     {
         public DbSet<Feedback> Feedbacks { get; set; }
+        public DbSet<Order> Orders { get; set; }
         public DbSet<TrainTicket> TrainTickets { get; set; }
         public DbSet<BusTicket> BusTickets { get; set; }
-        public DbSet<PlaneTicket> PlaneTickets { get; set; }
-        public DbSet<BookingHistory> BookingHistories { get; set; }
+        public DbSet<TrainPurchaseHistory> TrainPurchaseHistory { get; set; }
+        public DbSet<BusPurchaseHistory> BusPurchaseHistory { get; set; }
 
         // Train related DbSets
         public DbSet<TrainLine> TrainLines { get; set; }
         public DbSet<TrainStation> TrainStations { get; set; }
-        public DbSet<TrainStop> TrainStops { get; set; }
-        public DbSet<TrainOperationPlan> TrainOperationPlans { get; set; }
         public DbSet<Wagon> Wagons { get; set; }
         public DbSet<TrainSeat> TrainSeats { get; set; }
         public DbSet<Train> Trains { get; set; }
-        public DbSet<TrainArrivalDeparture> TrainArrivalsDepartures { get; set; }
-        public DbSet<TrainStationSchedule> TrainStationSchedules { get; set; }
+        public DbSet<TrainMovement> TrainMovements { get; set; }
+        public DbSet<TrainSchedule> TrainSchedules { get; set; }
 
-        //Bus related DbSets
+        ////Bus related DbSets
         public DbSet<BusLine> BusLines { get; set; }
         public DbSet<BusStation> BusStations { get; set; }
-        public DbSet<BusStop> BusStops { get; set; }
-        public DbSet<BusOperationPlan> BusOperationPlans { get; set; }
-        public DbSet<BusSeat> BusSeats { get; set; }
         public DbSet<Bus> Buses { get; set; }
-
-        //Plane related DbSets
-        public DbSet<PlaneLine> PlaneLines { get; set; }
-        public DbSet<PlaneStation> PlaneStations { get; set; }
-        public DbSet<PlaneStop> PlaneStops { get; set; }
-        public DbSet<PlaneOperationPlan> PlaneOperationPlans { get; set; }
-        public DbSet<PlaneSeat> PlaneSeats { get; set; }
-        public DbSet<Plane> Planes { get; set; }
+        public DbSet<BusSeat> BusSeats { get; set; }
+        public DbSet<BusMovement> BusMovements { get; set; }
 
         // Location related DbSets
         public DbSet<Country> Countries { get; set; }

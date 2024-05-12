@@ -16,7 +16,7 @@ namespace Domain.Entities.TrainEntities
         public string LineName { get; set; }
         public string Description { get; set; }
 
-        public virtual ICollection<Train> Trains { get; set; }  
-        public virtual ICollection<TrainOperationPlan> TrainOperationPlans { get; set; }
+        public virtual ICollection<Train> Trains { get; set; }
+        public virtual ICollection<TrainMovement> TrainMovements { get; set; }
     }
 }

@@ -6,10 +6,11 @@ using System.Threading.Tasks;
 
 namespace DLL.Dtos.BusDtos
 {
-    public class BusDto
+    public class PaymentBusResponseFailDto
     {
+        public List<int> Seats { get; set; }
         public int BusId { get; set; }
-        public string BusType { get; set; }
-        public object Seats { get; set; }
+        public int OrderId { get; set; }
+        public string OrderStatus { get; set; }
     }
 }

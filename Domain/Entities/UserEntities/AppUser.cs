@@ -15,8 +15,7 @@ namespace Domain.Entities.UserEntities
         public string LastName { get; set; }
         public string? RefreshToken { get; set; }
         public DateTime RefreshTokenExpiryTime { get; set; }
-        public virtual ICollection<TrainTicket> TrainTickets { get; set; }
         public virtual ICollection<Feedback> Feedbacks { get; set; }
-        public virtual ICollection<BookingHistory> BookingHistories { get; set; }
+        public virtual ICollection<TrainPurchaseHistory> TrainPurchaseHistory { get; set; }
     }
 }

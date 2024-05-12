@@ -6,13 +6,20 @@ using Microsoft.EntityFrameworkCore;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
-using DLL.Dtos.BusDtos;
 using System.Diagnostics;
 using System.Numerics;
 using System.Security.Policy;
 using static System.Collections.Specialized.BitVector32;
 using Microsoft.Extensions.Hosting;
 using Domain.Types;
+using DLL.Dtos.BusDtos;
+using DLL.Dtos.TrainDtos;
+using Domain.BusEntities;
+using Domain.Entities.UserEntities;
+using PdfSharp.Drawing;
+using PdfSharp.Pdf;
+using System.Net.Mail;
+using System.Net;
 
 public class BusService : IBusService
 {
@@ -23,171 +30,293 @@ public class BusService : IBusService
         _context = context;
     }
 
-    public async Task AddBusStationsAsync(List<BusStationDto> BusStationDtos) // Add multiple Bus stations
+    public async Task<IEnumerable<AppropriateBusLineDto>> FindAppropriateLinesAsync(string departureStation, string arrivalStation, DateTime departureDate)
     {
-        var BusStations = BusStationDtos.Select(dto => new BusStation
-        {
-            StationName = dto.StationName,
-            LocationId = dto.LocationId
-        }).ToList();
+        int departureStationId = _context.BusStations.FirstOrDefault(bs => bs.StationName == departureStation)?.Id ?? -1;
+        int arrivalStationId = _context.BusStations.FirstOrDefault(bs => bs.StationName == arrivalStation)?.Id ?? -1;
 
-        _context.BusStations.AddRange(BusStations); // Add all at once
+        if (departureStationId == -1 || arrivalStationId == -1)
+        {
+            return Enumerable.Empty<AppropriateBusLineDto>();
+        }
+
+        var departureMovements = await _context.BusMovements
+            .Include(bm => bm.BusLine)
+            .ThenInclude(bl => bl.Buses)
+            .ThenInclude(b => b.BusSeats)
+            .Where(bm => bm.DepartureTime.HasValue &&
+                         bm.DepartureTime.Value.Date == departureDate.Date &&
+                         bm.BusStationId == departureStationId &&
+                         bm.BusLine.Buses.Any(b => b.IsAvailable))
+            .ToListAsync();
+
+        var arrivalMovements = await _context.BusMovements
+            .Include(bm => bm.BusLine)
+            .ThenInclude(bl => bl.Buses)
+            .ThenInclude(b => b.BusSeats)
+            .Where(bm => bm.ArrivalTime.HasValue &&
+                         bm.ArrivalTime.Value.Date == departureDate.Date &&
+                         bm.BusStationId == arrivalStationId)
+            .ToListAsync();
+
+        var appropriateLines = from departureMovement in departureMovements
+                               join arrivalMovement in arrivalMovements
+                               on departureMovement.BusLineId equals arrivalMovement.BusLineId
+                               where departureMovement.DepartureTime < arrivalMovement.ArrivalTime
+                               select new AppropriateBusLineDto
+                               {
+                                   DepartureStation = departureStation,
+                                   ArrivalStation = arrivalStation,
+                                   DepartureTime = new TimeOnly(departureMovement.DepartureTime.Value.Hour, departureMovement.DepartureTime.Value.Minute),
+                                   ArrivalTime = new TimeOnly(arrivalMovement.ArrivalTime.Value.Hour, arrivalMovement.ArrivalTime.Value.Minute),
+                                   DepartureDate = departureMovement.DepartureTime.Value.Date,
+                                   ArrivalDate = arrivalMovement.ArrivalTime.Value.Date,
+                                   AvailablePlaces = departureMovement.BusLine.Buses.SelectMany<Bus, BusSeat>(b => b.BusSeats).Count(s => s.StateType == StateType.empty),
+                                   TotalPlaces = departureMovement.BusLine.Buses.SelectMany<Bus, BusSeat>(b => b.BusSeats).Count(),
+                                   Duration = GetDurationAsTimeOnly(departureMovement.DepartureTime.Value, arrivalMovement.ArrivalTime.Value),
+                                   BusLineName = departureMovement.BusLine.LineName,
+                                   BusLineDescription = departureMovement.BusLine.Description,
+                                   BusId = departureMovement.BusLine.Buses.FirstOrDefault()?.Id ?? -1,
+                                   BusNumber = departureMovement.BusLine.Buses.FirstOrDefault()?.BusNumber ?? string.Empty,
+                                   FirstPrices = CalculateFirstPrices(departureMovement.DistanceFromStart, arrivalMovement.DistanceFromStart)
+                               };
+
+        return appropriateLines.ToList();
+    }
+
+
+    private List<decimal> CalculateFirstPrices(int departureDistance, int arrivalDistance)
+    {
+        var distance = arrivalDistance - departureDistance;
+        var prices = new List<decimal>
+        {
+            (decimal)(distance * 5 * 0.05), // Economy
+            (decimal)(distance * 5 * 0.2),  // FirstClass
+            (decimal)(distance * 5 * 0.1)   // SecondClass
+        };
+        return prices;
+    }
+
+    private TimeOnly GetDurationAsTimeOnly(DateTime departureTime, DateTime arrivalTime)
+    {
+        var duration = arrivalTime - departureTime;
+        int totalMinutes = (int)duration.TotalMinutes;
+        int hours = totalMinutes / 60;
+        int minutes = totalMinutes % 60;
+        return new TimeOnly(hours, minutes);
+    }
+
+    public async Task<BusLineDto> GetBusDetailsByBusNumberAsync(string busLineName, int busId)
+    {
+        var busLine = await _context.BusLines
+            .Where(bl => bl.LineName == busLineName)
+            .Select(bl => new BusLineDto
+            {
+                LineName = bl.LineName,
+                Description = bl.Description,
+                Buses = bl.Buses
+                    .Where(b => b.IsAvailable && b.Id == busId)
+                    .Select(b => new BusDto
+                    {
+                        BusId = b.Id,
+                        BusType = b.BusType,
+                        Seats = b.BusSeats
+                            .Where(s => s.StateType == StateType.empty)
+                            .Select(s => new BusSeatDto
+                            {
+                                Number = s.Number,
+                                SeatId = s.Id,
+                                StateType = s.StateType
+                            }).ToList()
+                    }).ToList()
+            })
+            .FirstOrDefaultAsync();
+
+        return busLine ?? throw new Exception("Bus line not found.");
+    }
+
+    public async Task ReserveSeats(SeatReservationRequestDto request)
+    {
+        var seats = await _context.BusSeats
+            .Include(s => s.Bus)
+            .Where(s => s.Bus.Id == request.BusId &&
+                        request.SeatNumbers.Contains(s.Number) &&
+                        s.StateType == StateType.empty)
+            .ToListAsync();
+
+        foreach (var seat in seats)
+        {
+            seat.StateType = StateType.bought;
+        }
         await _context.SaveChangesAsync();
     }
 
-    public async Task AddBusLinesAsync(List<BusLineDto> BusLineDtos) // Add multiple Bus lines
+    public async Task BuyBusTicketFail(PaymentBusResponseFailDto paymentResponseFailDto)
     {
-        var BusLines = BusLineDtos.Select(dto => new BusLine
-        {
-            LineName = dto.LineName,
-            Description = dto.Description
-        }).ToList();
+        var order = await _context.Orders
+            .FirstOrDefaultAsync(o => o.OrderId == paymentResponseFailDto.OrderId);
 
-        _context.BusLines.AddRange(BusLines); // Add all at once
+        if (order != null)
+        {
+            throw new Exception($"Order with OrderId {paymentResponseFailDto.OrderId} already exists.");
+        }
+        else
+        {
+            order = new Order
+            {
+                OrderId = paymentResponseFailDto.OrderId,
+                OrderState = paymentResponseFailDto.OrderStatus
+            };
+
+            await _context.Orders.AddAsync(order);
+        }
+
+        var seats = await _context.BusSeats
+            .Include(s => s.Bus)
+            .Where(s => s.Bus.Id == paymentResponseFailDto.BusId &&
+                        paymentResponseFailDto.Seats.Contains(s.Number))
+            .ToListAsync();
+
+        foreach (var seat in seats)
+        {
+            seat.StateType = StateType.empty;
+        }
+
         await _context.SaveChangesAsync();
     }
 
-    //public async Task AddBusesAsync(List<BusDto> BusDtos) // Add multiple Buss
-    //{
-    //    var Buss = BusDtos.Select(dto => new Bus
-    //    {
-    //        BusNumber = dto.BusNumber,
-    //        BusLineId = dto.BusLineId,
-    //        Seats = Enumerable.Range(1, 40).Select(seatNumber => new BusSeat
-    //            {
-    //                Number = seatNumber,
-    //                IsAvailable = true
-    //            }).ToList()
-    //        }).ToList(); // Create a list of Buss
-
-    //    _context.Buses.AddRange(Buss); // Add all at once
-    //    await _context.SaveChangesAsync(); // Save changes to the database
-    //}
-
-    //public async Task AddBusSchedulesAsync(List<BusOperationPlanDto> BusOperationPlanDtos) // Add multiple Bus schedules
-    //{
-    //    var BusSchedules = BusOperationPlanDtos.Select(dto => new BusOperationPlan
-    //    {
-    //        BusLineId = dto.BusId,
-    //        BusStops = dto.BusStops.Select(ts => new BusStop
-    //        {
-    //            StationId = ts.StationId,
-    //            ArrivalTime = ts.ArrivalTime,
-    //            DepartureTime = ts.DepartureTime,
-    //            DistanceFromStart = ts.DistanceFromStart
-    //        }).ToList()
-    //    }).ToList();
-
-    //    _context.BusOperationPlans.AddRange(BusSchedules); // Add all at once
-    //    await _context.SaveChangesAsync();
-    //}
-
-    //public async Task<IEnumerable<BusDto>> GetBusesByBusLineAsync(int BusLineId)
-    //{
-    //    return await _context.Buses
-    //        .Where(t => t.BusLineId == BusLineId)
-    //        .Select(t => new BusDto
-    //        {
-    //            Id = t.Id,
-    //            BusNumber = t.BusNumber,
-    //            BusLineId = t.BusLineId,
-    //            Seats = t.Seats.Select(s => new BusSeatDto
-    //            {
-    //                Id = s.Id,
-    //                Number = s.Number,
-    //                IsAvailable = s.IsAvailable
-    //            }).ToList()
-    //        }).ToListAsync();
-    //}
-
-
-    //public async Task<IEnumerable<BusTicketDto>> FindAppropriateTicketsAsync(string departureStation, string arrivalStation, DateTime departureDate, int? passengerCount = null, TicketType? ticketType = null)
-    //{
-    //    var matchingOperations = await _context.BusOperationPlans
-    //        .Include(plan => plan.BusLine) // To get Bus line information
-    //        .Include(plan => plan.BusStops) // To get the stop details
-    //        .Where(plan =>
-    //            plan.BusStops.Any(stop => stop.Station.StationName == departureStation) &&
-    //            plan.BusStops.Any(stop => stop.Station.StationName == arrivalStation) &&
-    //            plan.BusStops.First().DepartureTime.HasValue &&
-    //            plan.BusStops.First().DepartureTime.Value.Date == departureDate.Date)
-    //        .ToListAsync();
-
-    //    var tickets = matchingOperations.Select(plan =>
-    //    {
-    //        var departureStop = plan.BusStops.First(stop => stop.Station.StationName == departureStation);
-    //        var arrivalStop = plan.BusStops.First(stop => stop.Station.StationName == arrivalStation);
-
-    //        var price = CalculatePrice(departureStation, arrivalStation, passengerCount, ticketType);
-
-    //        return new BusTicketDto
-    //        {
-    //            Id = plan.Id, // Unique identifier for the ticket
-    //            BusNumber = plan.BusLine.LineName, // Bus line identifier
-    //            DepartureStation = departureStation,
-    //            ArrivalStation = arrivalStation,
-    //            DepartureTime = departureStop.DepartureTime,
-    //            ArrivalTime = arrivalStop.ArrivalTime,
-    //            Price = price, // Calculated price with optional discounts
-    //            PassengerCount = passengerCount // Optional passenger count
-    //        };
-    //    });
-
-    //    return tickets;
-    //}
-
-    //private decimal CalculatePrice(string departureStation, string arrivalStation, int? passengerCount, TicketType? ticketType)
-    //{
-    //    var BusStops = _context.BusOperationPlans
-    //        .SelectMany(plan => plan.BusStops)
-    //        .Where(
-    //            ts => ts.Station.StationName == departureStation ||
-    //                  ts.Station.StationName == arrivalStation
-    //        )
-    //        .OrderBy(ts => ts.Station.StationName == departureStation ? 0 : 1)
-    //        .Select(ts => ts.DistanceFromStart) // Correct reference
-    //        .ToArray();
-
-    //    var distance = BusStops[1] - BusStops[0];
-    //    var basePrice = distance * 0.5m;
-    //    var adjustedPassengerCount = passengerCount ?? 1;
-
-    //    // Apply discounts based on ticket type
-    //    decimal discount = 0;
-    //    if (ticketType.HasValue)
-    //    {
-    //        if (ticketType.Value == TicketType.Student)
-    //        {
-    //            discount = 0.5m; // 50% discount for students
-    //        }
-    //        else if (ticketType.Value == TicketType.Child)
-    //        {
-    //            discount = 0.1m; // 10% discount for children
-    //        }
-    //    }
-
-    //    var totalPrice = basePrice * adjustedPassengerCount * (1 - discount);
-
-    //    return totalPrice;
-    //}
-
-    public Task AddBusesAsync(List<BusDto> busDtos)
+    public async Task BuyBusTicketSuccess(PaymentBusResponseSuccessDto paymentBusResponseSuccessDto)
     {
-        throw new NotImplementedException();
+        var order = await _context.Orders
+            .FirstOrDefaultAsync(o => o.OrderId == paymentBusResponseSuccessDto.OrderId);
+
+        if (order != null)
+        {
+            throw new Exception($"Order with OrderId {paymentBusResponseSuccessDto.OrderId} already exists.");
+        }
+        else
+        {
+            order = new Order
+            {
+                OrderId = paymentBusResponseSuccessDto.OrderId,
+                OrderState = paymentBusResponseSuccessDto.OrderStatus
+            };
+            await _context.Orders.AddAsync(order);
+        }
+
+        var busTickets = new List<BusTicket>();
+        var purchaseHistories = new List<BusPurchaseHistory>();
+        var now = DateTime.UtcNow;
+
+        foreach (var ticketDto in paymentBusResponseSuccessDto.BusTicketDtos)
+        {
+            var seat = await _context.BusSeats
+                .Include(s => s.Bus)
+                .FirstOrDefaultAsync(s => s.Bus.Id == paymentBusResponseSuccessDto.BusId &&
+                                          s.Number == ticketDto.SeatNumber);
+
+            if (seat == null)
+            {
+                throw new Exception($"Seat number {ticketDto.SeatNumber} not found.");
+            }
+
+            seat.StateType = StateType.bought;
+
+            var busTicket = new BusTicket
+            {
+                Email = ticketDto.Email,
+                FirstName = ticketDto.FirstName,
+                LastName = ticketDto.LastName,
+                Price = ticketDto.Price,
+                DateOfPurchase = now,
+                TicketType = ticketDto.TicketType,
+                SeatNumber = ticketDto.SeatNumber,
+                BusNumber = paymentBusResponseSuccessDto.BusId.ToString(),
+                BusLineName = paymentBusResponseSuccessDto.BusLineName,
+                TimeOfDeparture = paymentBusResponseSuccessDto.TimeOfDeparture,
+                TimeOfArrival = paymentBusResponseSuccessDto.TimeOfArrival,
+                StationOfDeparture = paymentBusResponseSuccessDto.StationOfDeparture,
+                StationOfArrival = paymentBusResponseSuccessDto.StationOfArrival
+            };
+
+            await _context.BusTickets.AddAsync(busTicket);
+            busTickets.Add(busTicket);
+
+            if (!string.IsNullOrEmpty(ticketDto.UserId))
+            {
+                var purchaseHistory = new BusPurchaseHistory
+                {
+                    OrderId = order.Id,
+                    UserId = ticketDto.UserId,
+                    BusTicket = busTicket,
+                    Price = busTicket.Price,
+                    PurchaseDate = now
+                };
+
+                purchaseHistories.Add(purchaseHistory);
+                await _context.BusPurchaseHistory.AddAsync(purchaseHistory);
+            }
+
+            SendTicketPdfByEmail(busTicket);
+        }
+
+        await _context.SaveChangesAsync();
     }
 
-    public Task AddBusSchedulesAsync(List<BusOperationPlanDto> busOperationPlanDtos)
+    private void SendTicketPdfByEmail(BusTicket busTicket)
     {
-        throw new NotImplementedException();
-    }
+        var pdfDocument = new PdfDocument();
+        var page = pdfDocument.AddPage();
+        var graphics = XGraphics.FromPdfPage(page);
+        var font = new XFont("Verdana", 12);
 
-    public Task<IEnumerable<BusDto>> GetBusesByBusLineAsync(int trainLineId)
-    {
-        throw new NotImplementedException();
-    }
+        graphics.DrawString($"Bus Ticket", font, XBrushes.Black,
+        new XRect(0, 0, page.Width, page.Height),
+        XStringFormats.TopCenter);
 
-    public Task<IEnumerable<BusTicketDto>> FindAppropriateTicketsAsync(string departureStation, string arrivalStation, DateTime departureDate, int? passengerCount = null, TicketType? ticketType = null)
-    {
-        throw new NotImplementedException();
+        graphics.DrawString($"Name: {busTicket.FirstName} {busTicket.LastName}", font, XBrushes.Black,
+            new XRect(20, 40, page.Width, page.Height),
+        XStringFormats.TopLeft);
+
+        graphics.DrawString($"Email: {busTicket.Email}", font, XBrushes.Black,
+            new XRect(20, 60, page.Width, page.Height),
+        XStringFormats.TopLeft);
+
+        graphics.DrawString($"Bus Number: {busTicket.BusNumber}", font, XBrushes.Black,
+            new XRect(20, 80, page.Width, page.Height),
+        XStringFormats.TopLeft);
+
+        graphics.DrawString($"Departure: {busTicket.StationOfDeparture} at {busTicket.TimeOfDeparture}", font, XBrushes.Black,
+            new XRect(20, 100, page.Width, page.Height),
+        XStringFormats.TopLeft);
+
+        graphics.DrawString($"Arrival: {busTicket.StationOfArrival} at {busTicket.TimeOfArrival}", font, XBrushes.Black,
+            new XRect(20, 120, page.Width, page.Height),
+            XStringFormats.TopLeft);
+
+        // Save PDF to memory stream
+        using (var stream = new MemoryStream())
+        {
+            pdfDocument.Save(stream, false);
+
+            var client = new SmtpClient("smtp.example.com")
+            {
+                Port = 587,
+                Credentials = new NetworkCredential("kushneryk.yelyzaveta@gmailcom", "vswm vphu lhoi vpvn"),
+                EnableSsl = true,
+            };
+
+            var mailMessage = new MailMessage
+            {
+                From = new MailAddress("noreply@globaltickethub.com"),
+                Subject = "Your Bus Ticket",
+                Body = "Please find your bus ticket attached.",
+                IsBodyHtml = true,
+            };
+            mailMessage.To.Add(busTicket.Email);
+            mailMessage.Attachments.Add(new Attachment(new MemoryStream(stream.ToArray()), "BusTicket.pdf"));
+
+            client.Send(mailMessage);
+        }
     }
 }

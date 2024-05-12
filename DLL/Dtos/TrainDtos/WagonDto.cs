@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Domain.Types;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -8,8 +9,10 @@ namespace DLL.Dtos.TrainDtos
 {
     public class WagonDto
     {
-        public int Id { get; set; } // For updates and references
         public int Number { get; set; }
-        public List<TrainSeatDto> TrainSeats { get; set; } = new List<TrainSeatDto>();
+        public WagonType WagonType { get; set; }
+        public List<TrainSeatDto> Seats { get; set; }
+        public int AvailableSeats { get; set; }
+        public int WagonId { get; set; }
     }
 }

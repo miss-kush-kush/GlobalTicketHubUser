@@ -4,14 +4,11 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Domain.Types
+namespace DLL.Dtos.PaymentDtos
 {
-    public enum SeatType
+    public class BasicPaymentInfoDto
     {
-        normal,
-        tea,
-        authortea,
-        coffee,
-        other
+        public decimal Amount;
+        public string Description;
     }
 }

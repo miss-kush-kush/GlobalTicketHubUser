@@ -1,6 +1,5 @@
 ﻿using Domain.Entities.TrainEntities;
 using Domain.Entities.BusEntities;
-using Domain.Entities.PlaneEntities;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.Metrics;
@@ -21,6 +20,5 @@ namespace Domain.Entities.LocationEntities
         public virtual Country Country { get; set; }
         public virtual ICollection<TrainStation> TrainStations { get; set; }
         public virtual ICollection<BusStation> BusStations { get; set; }
-        public virtual ICollection<PlaneStation> PlaneStations { get; set; }
     }
 }
