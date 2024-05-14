@@ -12,7 +12,7 @@ namespace BLL.Services
 {
     public class PaymentService : IPaymentService
     {
-        private static string privateKey = "sandbox_SRz3HHrXQahe2UQDHNYsrZFzPYiiZfCM6qGrNHaD";
+        private static string privateKey = "";
 
         private static string ComputeSignature(string data)
         {
