@@ -331,7 +331,7 @@ public class TrainService : ITrainService
             var client = new SmtpClient("smtp.example.com")
             {
                 Port = 587,
-                Credentials = new NetworkCredential("kushneryk.yelyzaveta@gmailcom", "vswm vphu lhoi vpvn"),
+                Credentials = new NetworkCredential("", ""),
                 EnableSsl = true,
             };
 
